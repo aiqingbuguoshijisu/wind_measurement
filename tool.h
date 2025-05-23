@@ -2,7 +2,8 @@
 /*
 * 1.函数的命名第一个字母大写，中间不加符号。
 * 2.变量名中，如果出现-90°这种数据，使用Neg90命名。
-* 3.计算出角度后需转换成角度制
+* 3.计算出角度后需转换成角度制。
+* 4.函数的输入参数尽量不要是文件路径。
 */
 //C++17及以上版本运行 
 #include <iostream>
@@ -11,6 +12,9 @@
 #include <fstream>
 #include<vector>
 #include<map>
+#include<future>
+#include<thread>
+#include<queue>
 //下面两行是使用Eigen库用的，根据自己计算机配置即可
 #include "../eigen-3.4.0/Eigen/Dense"
 #include "../eigen-3.4.0/Eigen/Core"
@@ -19,8 +23,10 @@
 using namespace std;
 using namespace Eigen;
 namespace fs = std::filesystem;
-
+enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};
 static int it_nums = 7;//迭代次数
+extern Map coef;//同一次运行中，天平的系数和修正值不会发生变化，因此使用全局变量。
+extern VectorXd offset;
 
 class Pose_Angle//风轴系外的姿态角
 {
@@ -92,10 +98,10 @@ R_z_theta R_theta_ss{0,0,0};//支杆几何姿态角
 R_y_psi R_psi_ss{0,0,0};
 R_x_phi R_phi_ss{0,0,0};
 
-void printResult(const std::pair<std::map<int, std::vector<double>>, std::vector<std::map<int, std::vector<double>>>>& result) {
+void printResult(const map<int, std::vector<double>>& result) {
     // 打印第一个元素：map<int, vector<double>>
     std::cout << "First element (map<int, vector<double>>):\n";
-    for (const auto& elem : result.first) {
+    for (const auto& elem : result) {
         std::cout << "Key: " << elem.first << ", Values: ";
         for (double val : elem.second) {
             std::cout <<fixed<<setprecision(2)<< val << " ";
@@ -310,6 +316,9 @@ double Deg2Rad(double deg)
 
 map<int, vector<double>> CombinedVariables (vector<double> &Y)//计算干扰项的自变量，按顺序放
 {
+    /*
+    Y：载荷值。
+    */
     map<int, vector<double>> m1;//一阶项
     for(int i=0;i<6;i++)
     {
@@ -337,7 +346,7 @@ map<int, vector<double>> CombinedVariables (vector<double> &Y)//计算干扰项�
     return m1;//返回自变量矩阵
 }
 
-map<int, vector<double>> IterativeCalculation(map<int, vector<double>> &coff,vector<double> &U)
+map<int, vector<double>> IterativeCalculation(vector<double> &U)
 {
     /*
     coff：6*27个系数
@@ -347,9 +356,11 @@ map<int, vector<double>> IterativeCalculation(map<int, vector<double>> &coff,vec
     vector <double> Y_0(6,0);
     for(int i=0;i<6;i++)
     {
-        Y_0[i] = coff[i][i]*U[i]/1000;
+        //Y_0[i] = coff[i][i]*U[i]/1000;
+        Y_0[i] = coef[i][i]*U[i]/1000;
     }
-    map<int, vector<double>> tmp_coff = coff;
+    //map<int, vector<double>> tmp_coff = coff;
+    map<int, vector<double>> tmp_coff = coef;
     int index = 0;//剔除对角线上的系数，只保留干扰项的系数
     for (auto& it:tmp_coff)
     {
@@ -391,8 +402,12 @@ map<int, vector<double>> IterativeCalculation(map<int, vector<double>> &coff,vec
     return Y_i;//返回迭代结果
 }
 
-MatrixXd BridgeCorrect(MatrixXd &rawVol, VectorXd &offset)//先修正，后组桥
+MatrixXd BridgeCorrect(MatrixXd &rawVol)//先修正，后组桥
 {
+    /*
+    rawVol: 原始7元应变。
+    offset: 修正值。
+    */
     //修正电压值怎么给，每次都给在Balance Parameters (17-N6-80A)20250228.dat里面吗？
     MatrixXd correctedVol = rawVol.rowwise() - offset.transpose();
     // 13.11727924	,110.0940311	,93.70432627	,-79.92551249	,448.9582912	,-197.00641     ,-27.41440414
@@ -407,88 +422,220 @@ MatrixXd BridgeCorrect(MatrixXd &rawVol, VectorXd &offset)//先修正，后组�
     return result;
 }
 
-pair<map<int ,vector<double>>,vector<map<int ,vector<double>>>> _Result(string dataFilePath,string coffFilePath,VectorXd &offset)//给出迭代结果
+// map<int ,vector<double>> _Result(string dataFilePath,string coffFilePath)//测试用
+// {
+//     map<int, vector<double>> result_seven;
+
+//     map<int, vector<double>> coef = ReadFactorFile(coffFilePath);
+//     MatrixXd data = ReadNormalData(dataFilePath,4);
+
+//     MatrixXd datablock = data.block(0,24,data.rows(),7);
+//     MatrixXd datablockFix = BridgeCorrect(datablock);
+
+//     Map data_map = MatToMap(datablockFix);
+//     for(auto& it:data_map)
+//     {
+//         map<int, vector<double>> Y_i = IterativeCalculation(it.second);
+//         result_seven[it.first] = Y_i.rbegin()->second;
+//     }
+//     return result_seven;
+// }
+
+MatrixXd ItResult(MatrixXd &data)//迭代结果
 {
-    vector<map<int ,vector<double>>> result_all;
-    map<int, vector<double>> result_seven;
-
-    map<int, vector<double>> coef = ReadFactorFile(coffFilePath);
-    MatrixXd data = ReadNormalData(dataFilePath,4);
-
+    /*
+    data : 原始数据，全部都出来，函数里面有选取7元应变的过程。
+    offset ：修正值。
+    coef ：6*27个系数。
+    */
+    Map result_seven;
     MatrixXd datablock = data.block(0,24,data.rows(),7);
-    MatrixXd datablockFix = BridgeCorrect(datablock,offset);
-    cout<<datablockFix<<endl;
+    MatrixXd datablockFix = BridgeCorrect(datablock);
     Map data_map = MatToMap(datablockFix);
     for(auto& it:data_map)
     {
-        vector<double> U = it.second;
-        map<int, vector<double>> Y_i = IterativeCalculation(coef,U);
-        result_all.push_back(Y_i);
+        map<int, vector<double>> Y_i = IterativeCalculation(it.second);
         result_seven[it.first] = Y_i.rbegin()->second;
     }
-
-    return make_pair(result_seven, result_all);
+    return MapToMat(result_seven);
 }
 
-VectorXd ElasticAngleCoef (const string& folderPath,const string& angleFilePath)//弹性角系数计算
+class ThreadPool {
+public:
+    explicit ThreadPool(size_t numThreads = std::thread::hardware_concurrency()) 
+        : stop(false) {
+        // 创建指定数量的工作线程
+        for (size_t i = 0; i < numThreads; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(queueMutex);
+                        // 等待任务或停止信号
+                        condition.wait(lock, [this] { return stop || !tasks.empty(); });
+                        
+                        if (stop && tasks.empty()) {
+                            return;
+                        }
+                        
+                        // 取出任务
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }
+                    // 执行任务
+                    task();
+                }
+            });
+        }
+    }
+
+    // 提交任务的通用模板函数
+    template<class F, class... Args>
+    auto enqueue(F&& f, Args&&... args) 
+        -> std::future<typename std::result_of<F(Args...)>::type> {
+        
+        using return_type = typename std::result_of<F(Args...)>::type;
+        
+        // 创建任务包装器
+        auto task = std::make_shared<std::packaged_task<return_type()>>(
+            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+        );
+        
+        std::future<return_type> result = task->get_future();
+        
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            
+            if (stop) {
+                throw std::runtime_error("ThreadPool已停止，无法添加新任务");
+            }
+            
+            // 将任务添加到队列
+            tasks.emplace([task]() { (*task)(); });
+        }
+        
+        condition.notify_one();
+        return result;
+    }
+
+    // 析构函数
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        
+        condition.notify_all();
+        
+        for (std::thread &worker : workers) {
+            worker.join();
+        }
+    }
+
+    // 获取当前任务队列大小
+    size_t getQueueSize() const {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        return tasks.size();
+    }
+
+    // 获取线程数量
+    size_t getThreadCount() const {
+        return workers.size();
+    }
+
+private:
+    std::vector<std::thread> workers;           // 工作线程
+    std::queue<std::function<void()>> tasks;    // 任务队列
+    
+    mutable std::mutex queueMutex;              // 队列互斥锁
+    std::condition_variable condition;          // 条件变量
+    bool stop;                                  // 停止标志
+};
+
+
+
+VectorXd ElasticAngleCoef (vector<MatrixXd> &dataList,vector<MatrixXd> &loadHead710List)//弹性角系数计算
 {
     /*
-    folderPath: 存放数据的文件夹路径
-    angleFilePath: 存放加载头和710数据（目前格式是自己定的）
+    dataList:计算弹性角系数的数据，好几个文件得出。
+    loadHead710List：加载头和710角度，由象限仪给出。
     */
-    VectorXd result;
-    vector<MatrixXd> dataList = ReadFolderAllData(folderPath);
+    //计算弹性角系数时，各个姿态角下的文件数量怎么考虑？
+    //给的弹性角加载文件中，俯仰角文件36个，偏航26个，滚转14个，总计76个。
+    ThreadPool pool;//线程池
+    vector<future<MatrixXd>> futures;//异步任务结果
+    vector<MatrixXd> itResultList;//迭代结果列表
+    VectorXd result;//弹性角系数，5个，顺序为KY,KMZ,KZ,KMY,KMX
 
-    MatrixXd fittenData = MatrixXd::Zero(dataList.size(), 8);
-
-    auto calculateLoad = [](vector<MatrixXd>& datalist)
+    for(auto &data:dataList)
     {
-        for(const auto&data : datalist){
-
-        }
-    };
+        futures.push_back(pool.enqueue(ItResult, std::ref(data)));
+    }
+    for(auto &it:futures)
+    {
+        itResultList.push_back(it.get());
+    }
 
     return result;
 }
 
-tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(const string &filename_0, const string &filename_180, const string &filename_90, const string &filename_Neg90)
+tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(MatrixXd &InstallAngleData_0,
+    MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,MatrixXd &InstallAngleData_Neg90
+)
 {
-    int deleteLinesCounts = 4;
-    MatrixXd InstallAngleData_0 = ReadNormalData(filename_0,deleteLinesCounts);
-    MatrixXd InstallAngleData_180 = ReadNormalData(filename_180,deleteLinesCounts);
-    MatrixXd InstallAngleData_90 = ReadNormalData(filename_90,deleteLinesCounts);
-    MatrixXd InstallAngleData_Neg90 = ReadNormalData(filename_Neg90,deleteLinesCounts);
+    /*
+    InstallAngleData:各角度下的安装角数据。
+    offset: 修正值。
+    coef: 6*27个系数。
+    */
+
+    // MatrixXd itResult_0 = ItResult(InstallAngleData_0,offset,coef);
+    // MatrixXd itResult_180 = ItResult(InstallAngleData_180,offset,coef);
+    // MatrixXd itResult_90 = ItResult(InstallAngleData_90,offset,coef);
+    // MatrixXd itResult_Neg90 = ItResult(InstallAngleData_Neg90,offset,coef);
+
+    // 启动异步任务
+    auto future_0 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_0));
+    auto future_180 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_180));
+    auto future_90 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_90));
+    auto future_neg90 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_Neg90));
+
+    // 获取结果（会自动等待线程完成）
+    MatrixXd itResult_0 = future_0.get();
+    MatrixXd itResult_180 = future_180.get();
+    MatrixXd itResult_90 = future_90.get();
+    MatrixXd itResult_Neg90 = future_neg90.get();
 
     double Theta_mb , Psi_mb, Phi_mb;
     double tmp1 = 0;
-    for(int i=0;i<InstallAngleData_0.rows();i++)
+    for(int i=0;i<itResult_0.rows();i++)
     {
-        tmp1 += atan(InstallAngleData_0(i,43)/InstallAngleData_0(i,44));
+        tmp1 += atan(itResult_0(i,X_COL)/itResult_0(i,Y_COL));
     }
     double tmp2 = 0;
-    for(int i=0;i<InstallAngleData_180.rows();i++)
+    for(int i=0;i<itResult_180.rows();i++)
     {
-        tmp2 += atan(InstallAngleData_180(i,43)/InstallAngleData_180(i,44));
+        tmp2 += atan(itResult_180(i,X_COL)/itResult_180(i,Y_COL));
     }
     double tmp3 = 0;
-    for(int i=0;i<InstallAngleData_90.rows();i++)
+    for(int i=0;i<itResult_90.rows();i++)
     {
-        tmp3 += atan(InstallAngleData_90(i,43)/InstallAngleData_90(i,45));
+        tmp3 += atan(itResult_90(i,X_COL)/itResult_90(i,Z_COL));
     }
     double tmp4 = 0;
-    for(int i=0;i<InstallAngleData_Neg90.rows();i++)
+    for(int i=0;i<itResult_Neg90.rows();i++)
     {
-        tmp4 += atan(InstallAngleData_Neg90(i,43)/InstallAngleData_Neg90(i,45));
+        tmp4 += atan(itResult_Neg90(i,X_COL)/itResult_Neg90(i,Z_COL));
     }
     double tmp5 = 0;
-    for(int i=0;i<InstallAngleData_0.rows();i++)
+    for(int i=0;i<itResult_0.rows();i++)
     {
-        tmp5 += atan(InstallAngleData_0(i,45)/InstallAngleData_0(i,44)); 
+        tmp5 += atan(itResult_0(i,Z_COL)/itResult_0(i,Y_COL)); 
     }
 
-    Theta_mb = Rad2Deg((tmp1/InstallAngleData_0.rows()+tmp2/InstallAngleData_180.rows())/2);//弧度制
-    Psi_mb = Rad2Deg((tmp3/InstallAngleData_90.rows()+tmp4/InstallAngleData_Neg90.rows())/(-2));
-    Phi_mb = Rad2Deg(tmp5/InstallAngleData_0.rows());
+    Theta_mb = Rad2Deg((tmp1/itResult_0.rows()+tmp2/itResult_180.rows())/2);//弧度制
+    Psi_mb = Rad2Deg((tmp3/itResult_90.rows()+tmp4/itResult_Neg90.rows())/(-2));
+    Phi_mb = Rad2Deg(tmp5/itResult_0.rows());
 
     R_z_theta R_theta_mb{Theta_mb,0,0};//支杆和支撑机构姿态角
     R_y_psi R_psi_mb{0,Psi_mb,0};
