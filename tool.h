@@ -18,15 +18,11 @@ using namespace std;
 #define M_PI 3.14159265358979323846
 #define Map map<int, vector<double>>
 
-enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};
-
-void printResult(const map<int, std::vector<double>>& result) {
-    // 打印第一个元素：map<int, vector<double>>
-    std::cout << "First element (map<int, vector<double>>):\n";
-    for (const auto& elem : result) {
-        std::cout << "Key: " << elem.first << ", Values: ";
+void printResult(const map<int, std::vector<double>>& data) {
+    // 打印map<int, vector<double>>
+    for (const auto& elem : data) {
         for (double val : elem.second) {
-            std::cout <<fixed<<setprecision(2)<< val << " ";
+            std::cout <<fixed<<setprecision(3)<< val << " ";
         }
         std::cout << "\n";
     }
@@ -49,7 +45,7 @@ MatrixXd MapToMat(Map &data)//将map<int ,vector<double>>数据转化为MatrixXd
     return result;
 }
 
-Map MatToMap(MatrixXd &m)
+Map MatToMap(MatrixXd &m)//将MatrixXd数据转化为map<int, vector<double>>数据
 {
     Map result;
     for(int i = 0;  i < m.rows(); ++i)
@@ -64,11 +60,11 @@ Map MatToMap(MatrixXd &m)
     return result;
 }
 
-double Rad2Deg(double rad)
+double Rad2Deg(double rad)//将弧度转换为角度制
 {
     return rad*180/M_PI;
 }
-double Deg2Rad(double deg)
+double Deg2Rad(double deg)//将角度转换为弧度制
 {
     return deg*M_PI/180;
 }

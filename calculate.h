@@ -3,6 +3,7 @@
 #include "threadpool.h"
 #include "class.h"
 #include "iterate.h"
+enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};
 R_z_theta R_theta_sa{0,0,0};//支杆和支撑机构姿态角
 R_y_psi R_psi_sa{0,0,0};
 R_x_phi R_phi_sa{0,0,0};
@@ -19,12 +20,14 @@ MatrixXd LinearFit(MatrixXd &data)//线性拟合
     return ((X.transpose()*X).inverse()*X.transpose()*Y);
 }
 
-VectorXd ElasticAngleCoef (vector<MatrixXd> &dataList,vector<MatrixXd> &loadHead710List,Map &coef,VectorXd &offset)//弹性角系数计算
+VectorXd ElasticAngleCoef (vector<MatrixXd> &dataList,vector<MatrixXd> &loadHead710List,MatrixXd &coef,RowVectorXd &offset)//弹性角系数计算
 {
     //????????????????????????头大了已经
     /*
     dataList:计算弹性角系数的数据，好几个文件得出。
     loadHead710List：加载头和710角度，由象限仪给出，计算滚转角时没有710角度。
+    coef: 6*27个系数。
+    offset: 电压修正值。
     */
     //计算弹性角系数时，各个姿态角下的文件数量怎么考虑？
     //给的弹性角加载文件中，俯仰角文件36个，偏航26个，滚转14个(只用了7个，而且还是将第一个去除的)，总计76个。
@@ -68,11 +71,11 @@ VectorXd ElasticAngleCoef (vector<MatrixXd> &dataList,vector<MatrixXd> &loadHead
 }
 
 tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(MatrixXd &InstallAngleData_0,
-    MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,MatrixXd &InstallAngleData_Neg90,Map &coef,VectorXd &offset)
+    MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,MatrixXd &InstallAngleData_Neg90,MatrixXd &coef,RowVectorXd &offset)
 {
     /*
     InstallAngleData:各角度下的安装角数据。
-    offset: 修正值。
+    offset: 电压修正值。
     coef: 6*27个系数。
     */
 

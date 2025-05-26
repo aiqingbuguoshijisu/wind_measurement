@@ -79,7 +79,7 @@ MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
     return data;
 }
 
-//弹性角系数计算要读取整个文件夹的数据，并对每个文件中的载荷数据求均值用作拟合系数。
+//弹性角系数计算要读取整个文件夹的数据
 vector<MatrixXd> ReadFolderAllData(const string &folderPath)
 {
     int deleteLinesCounts = 4;
@@ -104,28 +104,93 @@ vector<MatrixXd> ReadFolderAllData(const string &folderPath)
     return dataList;
 }
 
-map<int ,vector<double>> ReadFactorFile(const string& coffFilePath)//读系数文件，并转换成6*27，方便后续使用
+// map<int ,vector<double>> ReadFactorFile(const string& coffFilePath)//读系数文件，并转换成6*27，方便后续使用
+// {
+//     std::filesystem::path fsPath;
+//     try {
+//          // Use u8path to interpret the input string as UTF-8
+//         fsPath = std::filesystem::u8path(coffFilePath);
+//     } catch (const std::exception& e) {
+//         cerr << "Error: Invalid file path format: " << coffFilePath << " - " << e.what() << endl;
+//             return map<int, vector<double>>();
+//     }
+//     ifstream inFile(fsPath);
+//     if (!inFile.is_open()) {
+//         cerr << "Error: Unable to open file " << fsPath << endl;
+//         return map<int, vector<double>>();
+//     }
+
+//     vector<string> lines;
+//     string line;
+//     int rowCount = 0;
+//     while (getline(inFile, line) && rowCount < 28) {//拿28行数据，但是第一行是表头，后面会删除。
+//         if(line.find_first_not_of(" \t") == string::npos)
+//         {
+//             continue;
+//         }
+//         lines.push_back(line);
+//         ++rowCount;
+//     }
+//     inFile.close();
+
+//     if (lines.empty()) {
+//         cerr << "Error: File is empty" << endl;
+//         return map<int, vector<double>>();
+//     }
+
+//     //如果第一行是标题行，可以删除（根据实际情况决定）
+//     lines.erase(lines.begin());
+
+//     map<int, vector<double>> data;
+//     int dataIndex = 0;
+
+//     for (int i = 0; i < lines.size(); ++i) {
+//         stringstream ss(lines[i]);
+//         vector<double> row;
+//         double value;
+//         while (ss >> value) {
+//             row.push_back(value);
+//         }
+//         data[dataIndex] = row;
+//         dataIndex++;
+//     }
+
+//     map<int, vector<double>> data_T;
+//     for(int j =0;j<6;j++)
+//     {
+//         vector<double> row;
+//         for(int i=0;i<data.size();i++)
+//         {
+//             row.push_back(data[i][j]);
+//         }
+//         data_T[j] = row;
+//     }
+
+//     return data_T;
+// }
+
+MatrixXd ReadFactorFile(const string& coffFilePath) // 读系数文件，并转换成6*27，方便后续使用
 {
     std::filesystem::path fsPath;
     try {
-         // Use u8path to interpret the input string as UTF-8
+        // Use u8path to interpret the input string as UTF-8
         fsPath = std::filesystem::u8path(coffFilePath);
     } catch (const std::exception& e) {
         cerr << "Error: Invalid file path format: " << coffFilePath << " - " << e.what() << endl;
-            return map<int, vector<double>>();
+        return MatrixXd();
     }
+    
     ifstream inFile(fsPath);
     if (!inFile.is_open()) {
         cerr << "Error: Unable to open file " << fsPath << endl;
-        return map<int, vector<double>>();
+        return MatrixXd();
     }
 
     vector<string> lines;
     string line;
     int rowCount = 0;
-    while (getline(inFile, line) && rowCount < 28) {//拿28行数据，但是第一行是表头，后面会删除。
-        if(line.find_first_not_of(" \t") == string::npos)
-        {
+    while (getline(inFile, line) && rowCount < 28) { // 拿28行数据，但是第一行是表头，后面会删除。
+        if(line.find_first_not_of(" \t") == string::npos) {
             continue;
         }
         lines.push_back(line);
@@ -135,36 +200,45 @@ map<int ,vector<double>> ReadFactorFile(const string& coffFilePath)//读系数�
 
     if (lines.empty()) {
         cerr << "Error: File is empty" << endl;
-        return map<int, vector<double>>();
+        return MatrixXd();
     }
 
-    //如果第一行是标题行，可以删除（根据实际情况决定）
+    // 如果第一行是标题行，可以删除（根据实际情况决定）
     lines.erase(lines.begin());
 
-    map<int, vector<double>> data;
-    int dataIndex = 0;
-
-    for (int i = 0; i < lines.size(); ++i) {
-        stringstream ss(lines[i]);
+    // Parse data into temporary vector structure
+    vector<vector<double>> tempData;
+    for (const auto& line : lines) {
+        stringstream ss(line);
         vector<double> row;
         double value;
         while (ss >> value) {
             row.push_back(value);
         }
-        data[dataIndex] = row;
-        dataIndex++;
-    }
-
-    map<int, vector<double>> data_T;
-    for(int j =0;j<6;j++)
-    {
-        vector<double> row;
-        for(int i=0;i<data.size();i++)
-        {
-            row.push_back(data[i][j]);
+        if (!row.empty()) {
+            tempData.push_back(row);
         }
-        data_T[j] = row;
     }
 
+    if (tempData.empty()) {
+        cerr << "Error: No valid data found" << endl;
+        return MatrixXd();
+    }
+
+    // Convert to Eigen matrix and transpose (6 rows, 27 columns)
+    int rows = tempData.size();
+    int cols = tempData[0].size();
+    
+    MatrixXd data(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            data(i, j) = tempData[i][j];
+        }
+    }
+
+    // Transpose to get 6x27 matrix (assuming we want first 6 columns transposed)
+    MatrixXd data_T = data.transpose();
+    
     return data_T;
 }
+
