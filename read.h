@@ -1,26 +1,22 @@
 //文件读取文件
 #pragma once
-#include "tool.h"
+#include <iostream>
+#include <vector>
+#include<iomanip>
+#include "../eigen-3.4.0/Eigen/Dense"
+#include "../eigen-3.4.0/Eigen/Core"
 #include <filesystem>
 #include <fstream>
+using namespace Eigen;
+using namespace std;
 
 namespace fs = std::filesystem;
 // 读取常规的数据文件，如安装角，原始数据等。并且删除一些没用的行。
 MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
 {
     std::filesystem::path fsPath;
-    try {
-        // Use u8path to interpret the input string as UTF-8
-        fsPath = std::filesystem::u8path(filename);
-    } catch (const std::exception& e) {
-        cerr << "Error: Invalid file path format: " << filename << " - " << e.what() << endl;
-        return {};
-    }
+    fsPath = std::filesystem::u8path(filename);
     ifstream inFile(fsPath);
-    if (!inFile.is_open()) {
-        cerr << "Error: Unable to open file " << fsPath << endl;
-        return {};
-    }
 
     vector<string> lines;
     string line;
@@ -33,10 +29,6 @@ MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
     }
     inFile.close();
 
-    if (lines.empty()) {
-    cerr << "Error: File is empty" << endl;
-    return {};
-    }
     //删除前四行包括表头
     lines.erase(lines.begin(), lines.begin() + DeleteLinesCounts);
     
@@ -48,10 +40,6 @@ MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
     double val;
     while (ss >> val) {
         ++cols;
-    }
-    if (cols == 0) {
-        cerr << "Error: First data line contains no numeric values." << endl;
-        return MatrixXd();
     }
 
     // 读取数据
@@ -104,87 +92,12 @@ vector<MatrixXd> ReadFolderAllData(const string &folderPath)
     return dataList;
 }
 
-// map<int ,vector<double>> ReadFactorFile(const string& coffFilePath)//读系数文件，并转换成6*27，方便后续使用
-// {
-//     std::filesystem::path fsPath;
-//     try {
-//          // Use u8path to interpret the input string as UTF-8
-//         fsPath = std::filesystem::u8path(coffFilePath);
-//     } catch (const std::exception& e) {
-//         cerr << "Error: Invalid file path format: " << coffFilePath << " - " << e.what() << endl;
-//             return map<int, vector<double>>();
-//     }
-//     ifstream inFile(fsPath);
-//     if (!inFile.is_open()) {
-//         cerr << "Error: Unable to open file " << fsPath << endl;
-//         return map<int, vector<double>>();
-//     }
-
-//     vector<string> lines;
-//     string line;
-//     int rowCount = 0;
-//     while (getline(inFile, line) && rowCount < 28) {//拿28行数据，但是第一行是表头，后面会删除。
-//         if(line.find_first_not_of(" \t") == string::npos)
-//         {
-//             continue;
-//         }
-//         lines.push_back(line);
-//         ++rowCount;
-//     }
-//     inFile.close();
-
-//     if (lines.empty()) {
-//         cerr << "Error: File is empty" << endl;
-//         return map<int, vector<double>>();
-//     }
-
-//     //如果第一行是标题行，可以删除（根据实际情况决定）
-//     lines.erase(lines.begin());
-
-//     map<int, vector<double>> data;
-//     int dataIndex = 0;
-
-//     for (int i = 0; i < lines.size(); ++i) {
-//         stringstream ss(lines[i]);
-//         vector<double> row;
-//         double value;
-//         while (ss >> value) {
-//             row.push_back(value);
-//         }
-//         data[dataIndex] = row;
-//         dataIndex++;
-//     }
-
-//     map<int, vector<double>> data_T;
-//     for(int j =0;j<6;j++)
-//     {
-//         vector<double> row;
-//         for(int i=0;i<data.size();i++)
-//         {
-//             row.push_back(data[i][j]);
-//         }
-//         data_T[j] = row;
-//     }
-
-//     return data_T;
-// }
-
-MatrixXd ReadFactorFile(const string& coffFilePath) // 读系数文件，并转换成6*27，方便后续使用
+MatrixXd ReadFactorFile(const string& coefFilePath) // 读系数文件，并转换成6*27，方便后续使用
 {
     std::filesystem::path fsPath;
-    try {
-        // Use u8path to interpret the input string as UTF-8
-        fsPath = std::filesystem::u8path(coffFilePath);
-    } catch (const std::exception& e) {
-        cerr << "Error: Invalid file path format: " << coffFilePath << " - " << e.what() << endl;
-        return MatrixXd();
-    }
+    fsPath = std::filesystem::u8path(coefFilePath);
     
     ifstream inFile(fsPath);
-    if (!inFile.is_open()) {
-        cerr << "Error: Unable to open file " << fsPath << endl;
-        return MatrixXd();
-    }
 
     vector<string> lines;
     string line;
@@ -197,11 +110,6 @@ MatrixXd ReadFactorFile(const string& coffFilePath) // 读系数文件，并转�
         ++rowCount;
     }
     inFile.close();
-
-    if (lines.empty()) {
-        cerr << "Error: File is empty" << endl;
-        return MatrixXd();
-    }
 
     // 如果第一行是标题行，可以删除（根据实际情况决定）
     lines.erase(lines.begin());
@@ -218,11 +126,6 @@ MatrixXd ReadFactorFile(const string& coffFilePath) // 读系数文件，并转�
         if (!row.empty()) {
             tempData.push_back(row);
         }
-    }
-
-    if (tempData.empty()) {
-        cerr << "Error: No valid data found" << endl;
-        return MatrixXd();
     }
 
     // Convert to Eigen matrix and transpose (6 rows, 27 columns)
@@ -242,3 +145,44 @@ MatrixXd ReadFactorFile(const string& coffFilePath) // 读系数文件，并转�
     return data_T;
 }
 
+MatrixXd ReadLoad710AngleData(const string& load710FilePath)
+{
+    std::filesystem::path fsPath;
+    fsPath = std::filesystem::u8path(load710FilePath);
+    
+    ifstream inFile(fsPath);
+
+    vector<string> lines;
+    string line;
+    while (getline(inFile, line)) {
+        if(line.find_first_not_of(" \t") == string::npos) {
+            continue;
+        }
+        lines.push_back(line);
+    }
+    inFile.close();
+    lines.erase(lines.begin());
+    vector<vector<double>> tempData;
+    for (const auto& line : lines) {
+        stringstream ss(line);
+        vector<double> row;
+        double value;
+        while (ss >> value) {
+            row.push_back(value);
+        }
+        if (!row.empty()) {
+            tempData.push_back(row);
+        }
+    }
+
+    int rows = tempData.size();
+    int cols = tempData[0].size();
+    
+    MatrixXd data(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            data(i, j) = tempData[i][j];
+        }
+    }
+    return data;
+}

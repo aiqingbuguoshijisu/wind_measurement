@@ -16,49 +16,6 @@
 using namespace Eigen;
 using namespace std;
 #define M_PI 3.14159265358979323846
-#define Map map<int, vector<double>>
-
-void printResult(const map<int, std::vector<double>>& data) {
-    // 打印map<int, vector<double>>
-    for (const auto& elem : data) {
-        for (double val : elem.second) {
-            std::cout <<fixed<<setprecision(3)<< val << " ";
-        }
-        std::cout << "\n";
-    }
-}
-
-MatrixXd MapToMat(Map &data)//将map<int ,vector<double>>数据转化为MatrixXd数据
-{
-    int rowCount = data.size();
-    int colCount = data.begin()->second.size();
-    MatrixXd result(rowCount, colCount);
-    int index = 0;
-    for (const auto& pair : data) 
-    {
-        for (int j = 0; j < colCount; j++) 
-        {
-            result(index, j) = pair.second[j];
-        }
-        index++;
-    }
-    return result;
-}
-
-Map MatToMap(MatrixXd &m)//将MatrixXd数据转化为map<int, vector<double>>数据
-{
-    Map result;
-    for(int i = 0;  i < m.rows(); ++i)
-    {
-        vector<double> tmp(m.cols());
-        for(int j =0;j<m.cols();++j)
-        {
-            tmp[j] = m(i,j);
-        }
-        result.emplace(i, std::move(tmp));
-    }
-    return result;
-}
 
 double Rad2Deg(double rad)//将弧度转换为角度制
 {
