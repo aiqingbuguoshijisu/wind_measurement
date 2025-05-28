@@ -98,6 +98,7 @@ VectorXd ElasticAngleCoef (vector<vector<MatrixXd>> &dataList,vector<MatrixXd> &
     return result;
 }
 
+//安装角mb计算
 tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(MatrixXd &InstallAngleData_0,
     MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,MatrixXd &InstallAngleData_Neg90,MatrixXd &coef,RowVectorXd &offset)
 {
@@ -113,10 +114,10 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(
     // MatrixXd itResult_Neg90 = ItResult(InstallAngleData_Neg90,offset,coef);
 
     // 启动异步任务
-    auto future_0 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_0), std::ref(coef), std::ref(offset));
-    auto future_180 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_180), std::ref(coef), std::ref(offset));
-    auto future_90 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_90), std::ref(coef), std::ref(offset));
-    auto future_neg90 = std::async(std::launch::async, ItResult, std::ref(InstallAngleData_Neg90), std::ref(coef), std::ref(offset));
+    auto future_0 = async(launch::async, ItResult, ref(InstallAngleData_0), ref(coef), ref(offset));
+    auto future_180 = async(launch::async, ItResult, ref(InstallAngleData_180), ref(coef), ref(offset));
+    auto future_90 = async(launch::async, ItResult, ref(InstallAngleData_90), ref(coef), ref(offset));
+    auto future_neg90 = async(launch::async, ItResult, ref(InstallAngleData_Neg90), ref(coef), ref(offset));
 
     // 获取结果（会自动等待线程完成）
     MatrixXd itResult_0 = future_0.get();
@@ -125,39 +126,49 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(
     MatrixXd itResult_Neg90 = future_neg90.get();
 
     double Theta_mb , Psi_mb, Phi_mb;
+
     double tmp1 = 0;
+    double tmp2 = 0;
     for(int i=0;i<itResult_0.rows();i++)
     {
         tmp1 += atan(itResult_0(i,X_COL)/itResult_0(i,Y_COL));
     }
-    double tmp2 = 0;
     for(int i=0;i<itResult_180.rows();i++)
     {
         tmp2 += atan(itResult_180(i,X_COL)/itResult_180(i,Y_COL));
     }
-    double tmp3 = 0;
+    Theta_mb = Rad2Deg((tmp1/itResult_0.rows()+tmp2/itResult_180.rows())/2);//弧度制
+
+    tmp1 = 0;
+    tmp2 = 0;
     for(int i=0;i<itResult_90.rows();i++)
     {
-        tmp3 += atan(itResult_90(i,X_COL)/itResult_90(i,Z_COL));
+        tmp1 += atan(itResult_90(i,X_COL)/itResult_90(i,Z_COL));
     }
-    double tmp4 = 0;
     for(int i=0;i<itResult_Neg90.rows();i++)
     {
-        tmp4 += atan(itResult_Neg90(i,X_COL)/itResult_Neg90(i,Z_COL));
+        tmp2 += atan(itResult_Neg90(i,X_COL)/itResult_Neg90(i,Z_COL));
     }
-    double tmp5 = 0;
+    Psi_mb = Rad2Deg((tmp1/itResult_90.rows()+tmp2/itResult_Neg90.rows())/(-2));
+
+    tmp1 = 0;
     for(int i=0;i<itResult_0.rows();i++)
     {
-        tmp5 += atan(itResult_0(i,Z_COL)/itResult_0(i,Y_COL)); 
+        tmp1 += atan(itResult_0(i,Z_COL)/itResult_0(i,Y_COL)); 
     }
-
-    Theta_mb = Rad2Deg((tmp1/itResult_0.rows()+tmp2/itResult_180.rows())/2);//弧度制
-    Psi_mb = Rad2Deg((tmp3/itResult_90.rows()+tmp4/itResult_Neg90.rows())/(-2));
-    Phi_mb = Rad2Deg(tmp5/itResult_0.rows());
+    Phi_mb = Rad2Deg(tmp1/itResult_0.rows());
 
     R_z_theta R_theta_mb{Theta_mb,0,0};//支杆和支撑机构姿态角
     R_y_psi R_psi_mb{0,Psi_mb,0};
     R_x_phi R_phi_mb{0,0,Phi_mb};
 
     return make_tuple(R_theta_mb, R_psi_mb, R_phi_mb);
+}
+
+//计算弹性角，方法二。
+tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetElasticAngleTransMatrix()
+{
+    //先计算方法一的弹性角。迭代出载荷与弹性角系数相乘即可。
+    
+
 }
