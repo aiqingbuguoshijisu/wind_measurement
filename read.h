@@ -1,5 +1,6 @@
 //文件读取文件
 #pragma once
+#include "threadpool.h"
 #include <iostream>
 #include <vector>
 #include<iomanip>
@@ -11,8 +12,8 @@ using namespace Eigen;
 using namespace std;
 
 namespace fs = std::filesystem;
-// 读取常规的数据文件，如安装角，原始数据等。并且删除一些没用的行。
-MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
+// 读取常规的数据文件中除时间戳以外的全部数据，此外还将应变单独复制一份返回，如安装角，原始数据等。并且删除一些没用的行。
+pair<MatrixXd,MatrixXd> ReadNormalData(const string &filename ,int DeleteLinesCounts)
 {
     std::filesystem::path fsPath;
     fsPath = std::filesystem::u8path(filename);
@@ -43,7 +44,7 @@ MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
     }
 
     // 读取数据
-    MatrixXd data(lines.size(), cols);//不带表头的数据大小
+    MatrixXd alldata(lines.size(), cols);//不带表头的数据大小
     int row = 0;
     for(const auto& line : lines)
     {
@@ -59,19 +60,22 @@ MatrixXd ReadNormalData(const string &filename ,int DeleteLinesCounts)
         double val;
         while(ss>>val && col < cols)
         {
-            data(row, col++) = val;
+            alldata(row, col++) = val;
         }
         ++row;
     }
-    
-    return data;
+    MatrixXd straindata = alldata.block(0,24,alldata.rows(),7);
+    return make_pair(alldata,straindata);
 }
 
 //弹性角系数计算要读取整个文件夹的数据
-vector<MatrixXd> ReadFolderAllData(const string &folderPath)
+pair<vector<MatrixXd>,vector<MatrixXd>> ReadFolderAllData(const string &folderPath)
 {
     int deleteLinesCounts = 4;
-    vector<MatrixXd> dataList;
+    ThreadPool pool;
+    vector<future<pair<MatrixXd,MatrixXd>>> futures;
+    vector<MatrixXd> alldataList;
+    vector<MatrixXd> straindataList;
     vector<std::pair<fs::path, fs::file_time_type>> files;// 用于存储文件路径及其最后修改时间
 
     for(const auto& entry : fs::directory_iterator(folderPath)){
@@ -86,10 +90,14 @@ vector<MatrixXd> ReadFolderAllData(const string &folderPath)
     });
 
     for(const auto& [path,_] :files){
-        dataList.push_back(ReadNormalData(path.string(), deleteLinesCounts));
+        futures.push_back(pool.enqueue(ReadNormalData,path.string(),deleteLinesCounts));
     }
-    
-    return dataList;
+    for(auto &f : futures){
+        auto result = f.get(); // 仅调用一次 get()
+        alldataList.push_back(result.first);
+        straindataList.push_back(result.second);
+    }
+    return make_pair(alldataList,straindataList);
 }
 
 MatrixXd ReadFactorFile(const string& coefFilePath) // 读系数文件，并转换成6*27，方便后续使用

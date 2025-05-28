@@ -125,13 +125,13 @@ MatrixXd BridgeCorrect(const MatrixXd &rawVol,const RowVectorXd &offset)//先修
 MatrixXd ItResult(const MatrixXd &data,const MatrixXd &coef,const RowVectorXd &offset)//迭代结果
 {
     /*
-    data : 读取的原始数据，函数里面有选取7元应变的过程。
+    data : 7元应变。
     offset ：电压修正值。
     coef ：6*27个系数。
     */
     MatrixXd result_seven = MatrixXd::Zero(data.rows(), 6);
-    MatrixXd datablock = data.block(0,24,data.rows(),7);
-    MatrixXd datablockFix = BridgeCorrect(datablock,offset);
+    //MatrixXd datablock = data.block(0,24,data.rows(),7);
+    MatrixXd datablockFix = BridgeCorrect(data,offset);
    // Map data_map = MatToMap(datablockFix);
 
    for(int i=0;i<datablockFix.rows();i++){

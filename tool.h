@@ -21,7 +21,15 @@ double Rad2Deg(double rad)//将弧度转换为角度制
 {
     return rad*180/M_PI;
 }
+
 double Deg2Rad(double deg)//将角度转换为弧度制
 {
     return deg*M_PI/180;
+}
+
+
+VectorXd LinearFit(MatrixXd &X,VectorXd &Y)//线性拟合
+{
+    //return ((X.transpose()*X).inverse()*X.transpose()*Y);
+    return X.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(Y);
 }

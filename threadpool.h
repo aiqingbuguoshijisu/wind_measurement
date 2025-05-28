@@ -3,6 +3,7 @@
 #include<future>
 #include<thread>
 #include<queue>
+#include <functional>
 
 class ThreadPool {
 public:

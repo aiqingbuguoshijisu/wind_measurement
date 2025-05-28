@@ -4,25 +4,13 @@
 #include "class.h"
 #include "iterate.h"
 #include "tool.h"
-enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};
-R_z_theta R_theta_sa{0,0,0};//支杆和支撑机构姿态角
-R_y_psi R_psi_sa{0,0,0};
-R_x_phi R_phi_sa{0,0,0};
+enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};//只在选取迭代结果列时使用
 
-R_z_theta R_theta_ss{0,0,0};//支杆几何姿态角
-R_y_psi R_psi_ss{0,0,0};
-R_x_phi R_phi_ss{0,0,0};
-
-VectorXd LinearFit(MatrixXd &X,VectorXd &Y)//线性拟合
-{
-    //return ((X.transpose()*X).inverse()*X.transpose()*Y);
-    return X.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(Y);
-}
-
+//弹性角系数计算
 VectorXd ElasticAngleCoef (vector<vector<MatrixXd>> &dataList,vector<MatrixXd> &loadHead710List,MatrixXd &coef,RowVectorXd &offset)//弹性角系数计算
 {
     /*
-    dataList:3个姿态角的数据文件。
+    dataList:3个姿态角的数据文件的7元应变。
     loadHead710List：加载头和710角度，由象限仪给出，计算滚转角时没有710角度。
     coef: 6*27个系数。
     offset: 电压修正值。
@@ -98,20 +86,16 @@ VectorXd ElasticAngleCoef (vector<vector<MatrixXd>> &dataList,vector<MatrixXd> &
     return result;
 }
 
-//安装角mb计算
-tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(MatrixXd &InstallAngleData_0,
-    MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,MatrixXd &InstallAngleData_Neg90,MatrixXd &coef,RowVectorXd &offset)
+//安装角mb计算。double返回值是俯仰安装角mb，后面要用。
+tuple<class R_z_theta, class R_y_psi, class R_x_phi, double> GetModelBalanceInstallAngleTransMatrix
+(MatrixXd &InstallAngleData_0,MatrixXd &InstallAngleData_180,MatrixXd &InstallAngleData_90,
+    MatrixXd &InstallAngleData_Neg90,MatrixXd &coef,RowVectorXd &offset)
 {
     /*
-    InstallAngleData:各角度下的安装角数据。
+    InstallAngleData:各角度下的安装角数据的7元应变。
     offset: 电压修正值。
     coef: 6*27个系数。
     */
-
-    // MatrixXd itResult_0 = ItResult(InstallAngleData_0,offset,coef);
-    // MatrixXd itResult_180 = ItResult(InstallAngleData_180,offset,coef);
-    // MatrixXd itResult_90 = ItResult(InstallAngleData_90,offset,coef);
-    // MatrixXd itResult_Neg90 = ItResult(InstallAngleData_Neg90,offset,coef);
 
     // 启动异步任务
     auto future_0 = async(launch::async, ItResult, ref(InstallAngleData_0), ref(coef), ref(offset));
@@ -162,13 +146,96 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetInstallAngleTransMatrix(
     R_y_psi R_psi_mb{0,Psi_mb,0};
     R_x_phi R_phi_mb{0,0,Phi_mb};
 
-    return make_tuple(R_theta_mb, R_psi_mb, R_phi_mb);
+    return make_tuple(R_theta_mb, R_psi_mb, R_phi_mb, Theta_mb);
 }
 
-//计算弹性角，方法二。
-tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetElasticAngleTransMatrix()
+//计算吹风弹性角bb，方法二。其中返回一个double是为了将初始弹性角弹出来后面要用的。
+tuple<class R_z_theta, class R_y_psi, class R_x_phi,double> GetBalanceSupportRodElasticAngleTransMatrix
+(VectorXd &ElasticAngleCoef,MatrixXd &data,MatrixXd &coef,RowVectorXd &offset,double SupportMechanismRollAngle)
 {
-    //先计算方法一的弹性角。迭代出载荷与弹性角系数相乘即可。
+    /*
+    ElasticAngleCoef: 弹性角系数。
+    data：吹风数据中的7元应变。
+    coef: 6*27个系数。
+    offset: 电压修正值。
+    */
     
+    MatrixXd itResult = ItResult(data,coef,offset);
+    auto meanItResult = itResult.colwise().mean();
+    double elasticThetaMethod1 = ElasticAngleCoef(0)*meanItResult(Y_COL) + ElasticAngleCoef(1)*meanItResult(MZ_COL);
+    double elasticPsiMethod1 = ElasticAngleCoef(2)*meanItResult(Z_COL) + ElasticAngleCoef(3)*meanItResult(MY_COL);
+    double elasticPhiMethod1 = ElasticAngleCoef(4)*meanItResult(MX_COL);
 
+    //再计算第二部分的弹性角。
+    double K_a = 2.88E-6 + (-5.74E-09)*fabs(SupportMechanismRollAngle) + 
+        (2.33E-09)*pow(fabs(SupportMechanismRollAngle),2) + (-1.80E-11)*pow(fabs(SupportMechanismRollAngle),3);
+    
+    double K_b = 2.88E-6 + (-5.74E-09)*fabs(90-SupportMechanismRollAngle) + 
+        (2.33E-09)*pow(fabs(90-SupportMechanismRollAngle),2) + (-1.80E-11)*pow(fabs(90-SupportMechanismRollAngle),3);
+
+    double elasticThetaMethod2 = K_a * (2.2198 * meanItResult(Y_COL)+meanItResult(MZ_COL)); 
+    double elasticPsiMethod2 = K_b * (2.2198 * meanItResult(Z_COL)+meanItResult(MY_COL));
+
+    R_z_theta R_theta_bb{elasticThetaMethod1+elasticThetaMethod2,0,0};
+    R_y_psi R_psi_bb{0,elasticPsiMethod1+elasticPsiMethod2,0};
+    R_x_phi R_phi_bb{0,0,elasticPhiMethod1};
+
+    return make_tuple(R_theta_bb, R_psi_bb, R_phi_bb,elasticThetaMethod1+elasticThetaMethod2);
 }
+
+// //计算支杆和支撑机构sa姿态角
+// tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetSupportRodSupportingMechanismAngle(double Theta_sa,double Psi_sa,double Phi_sa)
+// {
+//     R_z_theta R_theta_sa{Theta_sa,0,0};//支杆和支撑机构姿态角
+//     R_y_psi R_psi_sa{0,Psi_sa,0};
+//     R_x_phi R_phi_sa{0,0,Phi_sa};
+//     return make_tuple(R_theta_sa, R_psi_sa, R_phi_sa);
+// }
+
+// //计算支杆几何ss姿态角
+// tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetSupportRodGeometricAngle(double Theta_ss,double Psi_ss,double Phi_ss)
+// {
+//     R_z_theta R_theta_ss{Theta_ss,0,0};//支杆几何姿态角
+//     R_y_psi R_psi_ss{0,Psi_ss,0};
+//     R_x_phi R_phi_ss{0,0,Phi_ss};
+//     return make_tuple(R_theta_ss, R_psi_ss, R_phi_ss);
+// }
+
+R_z_theta R_theta_sa{0.0,0.0,0.0};//支杆和支撑机构姿态角
+R_y_psi R_psi_sa{0.0,0.0,0.0};
+R_x_phi R_phi_sa{0.0,0.0,0.0};
+
+R_z_theta R_theta_ss{0.0,0.0,0.0};//支杆几何姿态角
+R_y_psi R_psi_ss{0.0,0.0,0.0};
+R_x_phi R_phi_ss{0.0,0.0,0.0};
+
+//计算支撑机构ag姿态角
+tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetSupportMechanismAngle
+(double ScimitarPitchAngle,double ModelBalanceInstallPitchAngle,double InitialElasticAngle,double BalanceSupportRodPitchAngle
+    ,double Phi_ag)
+{
+    /*
+    ScimitarPitchAngle: 弯刀俯仰角。
+    ModelBalanceInstallPitchAngle:模型天平俯仰安装角。
+    InitialElasticAngle:初始弹性角。
+    BalanceSupportRodPitchAngle：天平支杆俯仰安装角。暂时为0。
+    Phi_ag: 支撑机构滚转角。
+    */
+    R_y_psi R_psi_ag{0,0,0};
+    R_x_phi R_phi_ag{0,0,Phi_ag};
+    //支撑机构俯仰角θag = 弯刀俯仰角 - 俯仰安装角mb - 初始弹性角 - 俯仰安装角bs（暂时0）
+    double Theta_ag = ScimitarPitchAngle - ModelBalanceInstallPitchAngle - InitialElasticAngle - BalanceSupportRodPitchAngle;
+    R_z_theta R_theta_ag{Theta_ag,0,0};
+    return make_tuple(R_theta_ag, R_psi_ag, R_phi_ag);
+}
+
+//计算天平支杆安装角bs
+tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetBalanceSupportInstallAngleTransMatrix
+(double Theta_bs,double Psi_bs,double Phi_bs)
+{
+    R_z_theta R_theta_bs{Theta_bs,0,0};
+    R_y_psi R_psi_bs{0,Psi_bs,0};
+    R_x_phi R_phi_bs{0,0,Phi_bs};
+    return make_tuple(R_theta_bs, R_psi_bs, R_phi_bs);
+}
+
