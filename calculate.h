@@ -150,7 +150,7 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi, double> GetModelBalanceInst
     return make_tuple(R_theta_mb, R_psi_mb, R_phi_mb, Theta_mb);
 }
 
-//计算吹风弹性角bb，方法二。其中返回一个double是为了将初始弹性角弹出来后面要用的。VectorXd是计算气动力系数时要用的载荷。
+//计算吹风弹性角bb，方法二。其中返回一个double是为了将初始弹性角弹出来后面要用的。VectorXd是计算气动力系数和自重修正时要用的载荷。
 tuple<class R_z_theta, class R_y_psi, class R_x_phi, double, VectorXd> GetBalanceSupportRodElasticAngleTransMatrix
 (VectorXd &ElasticAngleCoef,MatrixXd &data,MatrixXd &coef,RowVectorXd &offset,double SupportMechanismRollAngle)
 {
@@ -262,9 +262,10 @@ VectorXd CalculateWindCoefN
 (double &alpha,double &beta,VectorXd &F,Matrix3d &R_mb,double &p0,double &pct,double &delta_M,double &S)
 {
     /*
-    F：吹风时的载荷。
+    F：吹风时的载荷。这个参数是否用自重修正后的数据，有待商榷，因为自重的不确定度求解有点困难。
     alpha,beta：角度制。
     */
+    //该函数的修正部分还未实现，后续再补充。
     Vector3d N_b {F(X_COL),F(Y_COL),F(Z_COL)};
     R_y_psi R_beta{0,-beta,0};
     R_z_theta R_alpha{-alpha,0,0};
