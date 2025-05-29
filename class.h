@@ -1,15 +1,14 @@
 //声明Pose_Angle类
 #pragma once
-#include "../eigen-3.4.0/Eigen/Dense"
-#include "../eigen-3.4.0/Eigen/Core"
-using namespace Eigen;
+#include "tool.h"
+//构造函数参数为弧度制。构造时输入角度制，自动转换成弧度。
 class Pose_Angle//风轴系外的姿态角
 {
     public:
         double THETA;
         double PSI;
         double PHI;
-        Pose_Angle(double theta, double psi, double phi) : THETA(theta), PSI(psi), PHI(phi) {}
+        Pose_Angle(double theta, double psi, double phi) : THETA(Deg2Rad(theta)), PSI(Deg2Rad(psi)), PHI(Deg2Rad(phi)) {}
         virtual void TransformMatrix()  = 0;
         virtual ~Pose_Angle() = default;  // 默认虚析构函数
 };

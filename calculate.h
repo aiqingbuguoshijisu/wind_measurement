@@ -4,6 +4,7 @@
 #include "class.h"
 #include "iterate.h"
 #include "tool.h"
+#include <cmath>
 enum COL {Y_COL,MZ_COL,MX_COL,X_COL,Z_COL,MY_COL};//只在选取迭代结果列时使用
 
 //弹性角系数计算
@@ -149,8 +150,8 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi, double> GetModelBalanceInst
     return make_tuple(R_theta_mb, R_psi_mb, R_phi_mb, Theta_mb);
 }
 
-//计算吹风弹性角bb，方法二。其中返回一个double是为了将初始弹性角弹出来后面要用的。
-tuple<class R_z_theta, class R_y_psi, class R_x_phi,double> GetBalanceSupportRodElasticAngleTransMatrix
+//计算吹风弹性角bb，方法二。其中返回一个double是为了将初始弹性角弹出来后面要用的。VectorXd是计算气动力系数时要用的载荷。
+tuple<class R_z_theta, class R_y_psi, class R_x_phi, double, VectorXd> GetBalanceSupportRodElasticAngleTransMatrix
 (VectorXd &ElasticAngleCoef,MatrixXd &data,MatrixXd &coef,RowVectorXd &offset,double SupportMechanismRollAngle)
 {
     /*
@@ -159,9 +160,9 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi,double> GetBalanceSupportRod
     coef: 6*27个系数。
     offset: 电压修正值。
     */
-    
+    //初始弹性角用0°按照数据计算。
     MatrixXd itResult = ItResult(data,coef,offset);
-    auto meanItResult = itResult.colwise().mean();
+    RowVectorXd meanItResult = itResult.colwise().mean();
     double elasticThetaMethod1 = ElasticAngleCoef(0)*meanItResult(Y_COL) + ElasticAngleCoef(1)*meanItResult(MZ_COL);
     double elasticPsiMethod1 = ElasticAngleCoef(2)*meanItResult(Z_COL) + ElasticAngleCoef(3)*meanItResult(MY_COL);
     double elasticPhiMethod1 = ElasticAngleCoef(4)*meanItResult(MX_COL);
@@ -180,7 +181,7 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi,double> GetBalanceSupportRod
     R_y_psi R_psi_bb{0,elasticPsiMethod1+elasticPsiMethod2,0};
     R_x_phi R_phi_bb{0,0,elasticPhiMethod1};
 
-    return make_tuple(R_theta_bb, R_psi_bb, R_phi_bb,elasticThetaMethod1+elasticThetaMethod2);
+    return make_tuple(R_theta_bb, R_psi_bb, R_phi_bb,elasticThetaMethod1+elasticThetaMethod2,meanItResult.transpose());
 }
 
 // //计算支杆和支撑机构sa姿态角
@@ -239,3 +240,71 @@ tuple<class R_z_theta, class R_y_psi, class R_x_phi> GetBalanceSupportInstallAng
     return make_tuple(R_theta_bs, R_psi_bs, R_phi_bs);
 }
 
+pair<double,double> CalculateAlphaBeta(Matrix3d &R_mg,double &delta_alpha,double &delta_beta)
+{
+    /*
+    此函数表示从等式中计算α和β的过程。
+    delta_alpha，delta_beta：角度制。
+    */
+    R_y_psi R_delta_beta{0,delta_beta,0};
+    R_z_theta R_delta_alpha{delta_alpha,0,0};
+    Vector3d vec{1,0,0};
+    Vector3d vec_new = R_delta_beta.R_y_psi_N * R_delta_alpha.R_z_theta_N * vec;
+    double alpha = atan2((R_mg.row(1).dot(vec_new)),(R_mg.row(0).dot(vec_new)));
+    double beta = -asin(R_mg.row(2).dot(vec_new));
+
+    alpha = Rad2Deg(alpha);
+    beta = Rad2Deg(beta);
+    return make_pair(alpha,beta);
+}
+
+VectorXd CalculateWindCoefN
+(double &alpha,double &beta,VectorXd &F,Matrix3d &R_mb,double &p0,double &pct,double &delta_M,double &S)
+{
+    /*
+    F：吹风时的载荷。
+    alpha,beta：角度制。
+    */
+    Vector3d N_b {F(X_COL),F(Y_COL),F(Z_COL)};
+    R_y_psi R_beta{0,-beta,0};
+    R_z_theta R_alpha{-alpha,0,0};
+    double tmp = pow(sqrt(5*(pow(pct/p0,-2/7)-1))+delta_M,2);
+    double q = (0.7*p0*tmp)/pow((1+0.2*tmp),3.5);
+
+    Vector3d CwN = (R_beta.R_y_psi_N * R_alpha.R_z_theta_N * R_mb *N_b)/(q*S);
+    return CwN;
+}
+
+// pair<double,double> CalculateDeltaAlphaDeltaBeta
+// (vector<Matrix3d> &R_mg,vector<VectorXd> &F,vector<Matrix3d> &R_mb,double &p0,double &pct,double &delta_M,double &S)
+// {
+//     /*
+//     计算每个攻角下的数据
+//     F：弹性角计算时会迭代出吹风时的载荷。
+//     */
+//     //这个函数用的0，180，+-90的数据独立于安装角的数据。暂时没给。
+//     //先将Δα和Δβ设置为0。
+//     double delta_alpha = 0;
+//     double delta_beta = 0;
+//     int count = R_mg.size();
+//     MatrixXd X = MatrixXd::Zero(count,2);
+//     X.col(1) = VectorXd::Ones(count);
+//     VectorXd Y = VectorXd::Zero(count);
+//     for(int i=0;i<count;i++){//0°安装时每个阶梯下的攻角
+//         pair<double,double> tmp = CalculateAlphaBeta(R_mg[i],delta_alpha,delta_beta);
+//         double alpha = tmp.first;
+//         double beta = tmp.second;
+//         VectorXd CwN = CalculateWindCoefN(alpha,beta,F[i],R_mb[i],p0,pct,delta_M,S);
+//         if(alpha>=-2 && alpha<=2){
+//             X(i,0) = alpha;
+//             Y(i) = CwN(1);
+//         }
+//     }
+
+//     VectorXd CoefIntercept = LinearFit(X,Y);
+//     double K = CoefIntercept(0);//斜率
+//     double alpha0positive = CoefIntercept(1);//0°安装截距
+
+//     //选择实际攻角为0
+    
+// }
